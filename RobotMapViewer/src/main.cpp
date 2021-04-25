@@ -6,7 +6,9 @@
 #include <cmath>
 
 #define LOG(x) std::cout << x << std::endl
+
 sf::Color grey = sf::Color(128, 128, 128);
+char grid[500][500];
 
 std::string getContents(const std::string& filePath)
 {
@@ -68,12 +70,29 @@ void createImage(sf::Image& image, std::string filePath)
 	{
 		for (int j = 0; j < image.getSize().x; j++)
 		{
-			image.setPixel(j, i, sf::Color::Red);
+			grid[j][i] = fileContents.at(j + (i*size));
 		}
 	}
 }
 
-void editImage(sf::Image& image, std::string filePath)
+void editImage(sf::Image& image)
+{
+	// Go through each element in the grid and map the element onto the image
+	for (int i = 0; i < image.getSize().y; i++)
+	{
+		for (int j = 0; j < image.getSize().x; j++)
+		{
+			sf::Color colour = sf::Color::Green;
+			if (grid[i][j] == '0') colour = grey;
+			else if (grid[i][j] == '1') colour = sf::Color::White;
+			else if (grid[i][j] == '2') colour = sf::Color::Black;
+			else if (grid[i][j] == '3') colour = sf::Color::Red;
+			image.setPixel(i, j, colour);
+		}
+	}
+}
+
+void updateGrid(std::string filePath)
 {
 	std::string fileContents = getContents(filePath);
 
@@ -85,11 +104,9 @@ void editImage(sf::Image& image, std::string filePath)
 	std::string robotData = getLineFromString(fileContents, 0);
 
 	int index = robotData.find(',');
-	std::string topLeftXStr = robotData.substr(0, index);
-	std::string topLeftYStr = robotData.substr(index+1, robotData.size()-index+1);
 	int topLeftX, topLeftY;
-	std::istringstream(topLeftXStr) >> topLeftX;
-	std::istringstream(topLeftYStr) >> topLeftY;
+	std::istringstream(robotData.substr(0, index)) >> topLeftX;
+	std::istringstream(robotData.substr(index + 1, robotData.size() - index + 1)) >> topLeftY;
 
 	fileContents.erase(std::remove(fileContents.begin(), fileContents.end(), '\n'), fileContents.end()); // Remove end lines
 	int startingIndex = robotData.size();
@@ -101,13 +118,7 @@ void editImage(sf::Image& image, std::string filePath)
 		for (int j = 0; j < size; j++)
 		{
 			int singleIndex = j + (i * size) + startingIndex;
-
-			if (fileContents.at(singleIndex) == '0')
-				image.setPixel(topLeftX +j, topLeftY +i, sf::Color::White);
-			else if(fileContents.at(singleIndex) == '1')
-				image.setPixel(topLeftX + j, topLeftY + i, sf::Color::Black);
-			else
-				image.setPixel(topLeftX + j, topLeftY + i, grey);
+			grid[topLeftX+j][topLeftY+i] = fileContents.at(singleIndex);
 		}
 	}
 }
@@ -119,7 +130,7 @@ int main()
 	sf::Image mapImage;
 	createImage(mapImage, "../../wholeMap.txt");
 
-	sf::RenderWindow window(sf::VideoMode(1024, 768), "Robot Map Viewer");
+	sf::RenderWindow window(sf::VideoMode(700, 700), "Robot Map Viewer");
 
 	sf::Texture mapTexture;
 	mapTexture.loadFromImage(mapImage);
@@ -127,6 +138,8 @@ int main()
 
 	shape.setPosition({ 20.f, 20.f });
 	shape.setScale(1.f, 1.f);
+
+	grid[31][13] = 2;
 
 	while (window.isOpen())
 	{
@@ -137,10 +150,11 @@ int main()
 				window.close();
 		}
 
-		editImage(mapImage, "../../robotSurroundings.txt");
+		updateGrid("../../robotSurroundings.txt");
+		editImage(mapImage);
 		mapTexture.update(mapImage);
 
-		window.clear(sf::Color(128, 128, 128));
+		window.clear(sf::Color(10, 128, 128));
 		window.draw(shape);
 		window.display();
 	}
