@@ -9,6 +9,8 @@
 
 sf::Color grey = sf::Color(128, 128, 128);
 char grid[500][500];
+int sonarAngles[] = { 90, 50, 30, 10, -10, -30, -50, -90, -90, -130, -150, -170, 170, 150, 130, 90 };
+std::pair<int, int> playerPos = { -1, -1 };
 
 std::string getContents(const std::string& filePath)
 {
@@ -53,24 +55,44 @@ std::string getLineFromString(const std::string& stringContents, const uint32_t 
 	return "";
 }
 
-void createImage(sf::Image& image, std::string filePath)
+std::vector<int> getElementsInLine(std::string line)
 {
-	std::string fileContents = getContents(filePath);
-	fileContents.erase(std::remove(fileContents.begin(), fileContents.end(), '\n'), fileContents.end()); // Remove end lines
+	std::vector<int> elements;
+	elements.resize(3);
 
-	// CoppeliaSim overwrites the file and there is a brief time when this program will open an empty file, in those particular events, just exit out this function
-	if (fileContents.empty() || fileContents == "") return;
+	for (int i = 0; i < 3; i++)
+	{
+		int index = line.find(',');
+		std::istringstream(line.substr(0, index)) >> elements[i];
+		line = line.substr(index+1, std::string::npos);
+	}
+	return elements;
+}
 
-	// Size of the texture is the square root of the total number of characters in the string as the map will always be a perfect square
-	float size = sqrt(fileContents.size());
-	image.create(size, size, grey);
+std::vector<float> getElementsInLineF(std::string line)
+{
+	std::vector<float> elements;
+	elements.resize(3);
+
+	for (int i = 0; i < 3; i++)
+	{
+		int index = line.find(',');
+		std::istringstream(line.substr(0, index)) >> elements[i];
+		line = line.substr(index + 1, std::string::npos);
+	}
+	return elements;
+}
+
+void createImage(sf::Image& image)
+{
+	image.create(500, 500, grey);
 
 	// Go through the empty grid and initialise with our uncertain colour
 	for (int i = 0; i < image.getSize().y; i++)
 	{
 		for (int j = 0; j < image.getSize().x; j++)
 		{
-			grid[j][i] = fileContents.at(j + (i*size));
+			grid[j][i] = 0;
 		}
 	}
 }
@@ -83,10 +105,10 @@ void editImage(sf::Image& image)
 		for (int j = 0; j < image.getSize().x; j++)
 		{
 			sf::Color colour = sf::Color::Green;
-			if (grid[i][j] == '0') colour = grey;
-			else if (grid[i][j] == '1') colour = sf::Color::White;
-			else if (grid[i][j] == '2') colour = sf::Color::Black;
-			else if (grid[i][j] == '3') colour = sf::Color::Red;
+			if (grid[i][j] == 0) colour = grey;
+			else if (grid[i][j] == 1) colour = sf::Color::White;
+			else if (grid[i][j] == 2) colour = sf::Color::Black;
+			else if (grid[i][j] == 3) colour = sf::Color::Red;
 			image.setPixel(i, j, colour);
 		}
 	}
@@ -99,28 +121,60 @@ void updateGrid(std::string filePath)
 	// CoppeliaSim overwrites the file and there is a brief time when this program will open an empty file, in those particular events, just exit out this function
 	if (fileContents.empty() || fileContents == "") return;
 
-	// The robot during runtime only writes a small portion of the map to the file for effiency so we need to iterate over that small portion and map it over onto the entire grid
-	// The first line of the file contains the top left coordinate in the grid and using the number of elements thereafter to determine just how many of our image we need to edit
+	// Delete all previous robot positions
+	if(playerPos.first != -1) grid[playerPos.first][playerPos.second] = 1;
+
+	// The robot prints its position and the sensor hits in the cell coordinates
 	std::string robotData = getLineFromString(fileContents, 0);
+	auto robotPos = getElementsInLine(robotData);
+	grid[robotPos[0]][robotPos[1]] = robotPos[2];
+	playerPos = { robotPos[0], robotPos[1] };
 
-	int index = robotData.find(',');
-	int topLeftX, topLeftY;
-	std::istringstream(robotData.substr(0, index)) >> topLeftX;
-	std::istringstream(robotData.substr(index + 1, robotData.size() - index + 1)) >> topLeftY;
-
-	fileContents.erase(std::remove(fileContents.begin(), fileContents.end(), '\n'), fileContents.end()); // Remove end lines
-	int startingIndex = robotData.size();
-
-	float size = sqrt(fileContents.size() - startingIndex);
-
-	for (int i = 0; i < size; i++)
+	// Now we can go through each sensor coordinate and set the value of the cell to 2
+	for (int i = 1; i < 17; i++)
 	{
-		for (int j = 0; j < size; j++)
-		{
-			int singleIndex = j + (i * size) + startingIndex;
-			grid[topLeftX+j][topLeftY+i] = fileContents.at(singleIndex);
-		}
+		std::string sensorLine = getLineFromString(fileContents, i);
+		auto sensorInfo = getElementsInLine(sensorLine);
+		if(sensorInfo[0] != -1 && sensorInfo[1] != -1)
+			grid[sensorInfo[0]][sensorInfo[1]] = sensorInfo[2];
+
 	}
+}
+
+void updateRobotData(std::string filePath, std::vector<sf::Text>& texts)
+{
+	std::string fileContents = getContents(filePath);
+
+	// CoppeliaSim overwrites the file and there is a brief time when this program will open an empty file, in those particular events, just exit out this function
+	if (fileContents.empty() || fileContents == "") return;
+
+	std::string robotPosData = getLineFromString(fileContents, 0);
+	auto robotPos = getElementsInLineF(robotPosData);
+	texts[0].setString("Robot Position: " + std::to_string(robotPos[0]) + ", " + std::to_string(robotPos[1]) + ", " + std::to_string(robotPos[2]));
+
+	std::string robotRotationData = getLineFromString(fileContents, 1);
+	auto robotRot = getElementsInLineF(robotRotationData);
+	texts[1].setString("Robot Rotation: " + std::to_string(robotRot[0]) + ", " + std::to_string(robotRot[1]) + ", " + std::to_string(robotRot[2]));
+
+	std::string robotWheelData = getLineFromString(fileContents, 2);
+	auto robotWheel = getElementsInLineF(robotWheelData);
+	texts[2].setString("Left Wheel: " + std::to_string(robotWheel[0]) + ", Right Wheel: " + std::to_string(robotWheel[1]));
+
+	std::string state = getLineFromString(fileContents, 3);
+	texts[3].setString("State: " + state);
+
+	std::string robotLeftObstacle = getLineFromString(fileContents, 4);
+	auto leftObstacle = getElementsInLineF(robotLeftObstacle);
+	texts[4].setString("Left Obstacle Distance: " + std::to_string(leftObstacle[0]));
+
+	std::string robotRightObstacle = getLineFromString(fileContents, 5);
+	auto rightObstacle = getElementsInLineF(robotRightObstacle);
+	texts[5].setString("Right Obstacle Distance: " + std::to_string(rightObstacle[0]));
+
+	std::string robotRMSEData = getLineFromString(fileContents, 6);
+	auto RMSE = getElementsInLineF(robotRMSEData);
+	texts[6].setString("RMSE: " + std::to_string(RMSE[0]));
+
 }
 
 int main()
@@ -128,18 +182,32 @@ int main()
 	// First, let's find out how big our occupancy grid is, the robot simulator initially writes an empty grid of the correct side to file
 	// The grid is a perfect square and 1 pixel is one element in the grid so the image size will be the number of rows * number of columns
 	sf::Image mapImage;
-	createImage(mapImage, "../../wholeMap.txt");
+	createImage(mapImage);
 
-	sf::RenderWindow window(sf::VideoMode(700, 700), "Robot Map Viewer");
+	sf::RenderWindow window(sf::VideoMode(600, 750), "Robot Map Viewer");
 
 	sf::Texture mapTexture;
 	mapTexture.loadFromImage(mapImage);
 	sf::Sprite shape(mapTexture);
 
-	shape.setPosition({ 20.f, 20.f });
-	shape.setScale(1.f, 1.f);
+	shape.setPosition({ 20.f, 240.f });
 
-	grid[31][13] = 2;
+	sf::Font font;
+	font.loadFromFile("arial/arial.ttf");
+
+	std::vector<sf::Text> texts;
+	texts.resize(7);
+	sf::Vector2f textPostion = { 20.f, 10.f };
+
+	for (auto& text : texts)
+	{
+		text.setFont(font);
+		text.setCharacterSize(24); // in pixels, not points!
+		text.setFillColor(sf::Color::White);
+		text.setPosition(textPostion);
+		textPostion.y += 30.f;
+		text.setString("Hello");
+	}
 
 	while (window.isOpen())
 	{
@@ -150,12 +218,17 @@ int main()
 				window.close();
 		}
 
-		updateGrid("../../robotSurroundings.txt");
+		updateRobotData("../../robotData.txt", texts);
+		updateGrid("../../surroundings.txt");
 		editImage(mapImage);
 		mapTexture.update(mapImage);
 
-		window.clear(sf::Color(10, 128, 128));
+		window.clear(sf::Color::Black);
 		window.draw(shape);
+		for (auto& text : texts)
+		{
+			window.draw(text);
+		}
 		window.display();
 	}
 
